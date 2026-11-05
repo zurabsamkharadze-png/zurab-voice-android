@@ -42,11 +42,11 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.qwen.tts.android"
+        applicationId = "ge.zurab.voice"
         minSdk = 31
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.2.0-zurab"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

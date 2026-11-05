@@ -2,6 +2,7 @@ package com.qwen.tts.android
 
 import android.Manifest
 import android.app.Application
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
@@ -14,6 +15,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
@@ -280,6 +282,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(text = value) }
     }
 
+    /** Accepts a text answer explicitly shared by Zurab AI via an Android deep link. */
+    fun speakIncomingText(value: String) {
+        val text = value.trim().take(320)
+        if (text.isEmpty() || _uiState.value.busy) return
+        viewModelScope.launch {
+            val voice = withContext(Dispatchers.IO) { dao.getLatestVoice() }
+            _uiState.update {
+                it.copy(
+                    text = text,
+                    selectedLanguageId = 2069, // Russian
+                    selectedVoiceId = voice?.voiceId,
+                    error = when {
+                        !it.modelReady -> "Download the model in Settings before speaking."
+                        voice == null -> "Record your voice in Voices before speaking."
+                        else -> null
+                    },
+                )
+            }
+            if (_uiState.value.modelReady && voice != null) synthesize()
+        }
+    }
+
     fun updateCpuThreads(value: Int) {
         if (_uiState.value.busy) return
         _uiState.update { it.copy(selectedCpuThreads = value, cpuThreads = value) }
@@ -421,7 +445,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (text.isEmpty() || _uiState.value.busy) return
         viewModelScope.launch {
             val variant = selectedVariant()
-            val selectedVoice = _uiState.value.selectedVoiceId?.let { id -> voices.value.firstOrNull { it.voiceId == id } }
+            val selectedVoice = _uiState.value.selectedVoiceId?.let { id ->
+                withContext(Dispatchers.IO) { dao.getVoiceById(id) }
+            }
             val estimate = estimateSynthesisMillis(text)
             startBusy(status = "Synthesizing speech", resetSynthesis = true, synthesisEstimate = estimate)
 
@@ -971,6 +997,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 }
 
 class MainActivity : ComponentActivity() {
+    private val bridgeViewModel: MainViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -978,10 +1006,28 @@ class MainActivity : ComponentActivity() {
         setContent {
             QwenTtsTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    QwenTtsApp()
+                    QwenTtsApp(viewModel = bridgeViewModel)
                 }
             }
         }
+        handleIncomingIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        val text = when (intent?.action) {
+            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+            Intent.ACTION_VIEW -> intent.data?.takeIf {
+                it.scheme == "zurabvoice" && it.host == "speak"
+            }?.getQueryParameter("text")
+            else -> null
+        }
+        if (!text.isNullOrBlank()) bridgeViewModel.speakIncomingText(text)
     }
 }
 
