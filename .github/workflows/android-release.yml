@@ -58,8 +58,10 @@ jobs:
         run: |
           # ubuntu-latest already includes an Android SDK. The setup-android
           # action incorrectly attempts to install the removed SDK `tools` package.
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager --install \
+          sdkman="$(find /usr/local/lib/android/sdk/cmdline-tools -path '*/bin/sdkmanager' -type f | sort -V | tail -n 1)"
+          test -n "$sdkman"
+          yes | "$sdkman" --licenses >/dev/null || true
+          "$sdkman" --install \
             "platforms;android-36" \
             "build-tools;36.0.0" \
             "ndk;27.2.12479018" \
