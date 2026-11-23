@@ -87,6 +87,8 @@ jobs:
         with:
           name: qwen3-tts-android-${{ env.RELEASE_VERSION }}
           path: artifacts/*.apk
+          # Release APK is stored separately in GitHub Releases; this CI copy is temporary.
+          retention-days: 2
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
